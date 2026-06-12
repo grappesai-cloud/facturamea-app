@@ -408,8 +408,9 @@ export const invoices = {
     return api<{ invoice: Invoice; lines: InvoiceLine[] }>(`/api/invoicing/invoices/${id}`);
   },
   create(body: InvoiceCreateInput) {
+    // `kind` is required by the API; default to 'factura' for ergonomics.
     return api<{ id: string; fullNumber: string; totalCents: number; efactura?: { sent: boolean; ok?: boolean; error?: string } }>(
-      '/api/invoicing/invoices', { method: 'POST', body },
+      '/api/invoicing/invoices', { method: 'POST', body: { kind: 'factura', ...body } },
     );
   },
   // Submit to ANAF SPV (e-Factura).
