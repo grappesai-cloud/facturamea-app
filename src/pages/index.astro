@@ -1,0 +1,15 @@
+---
+import '../styles/global.css';
+---
+<!doctype html>
+<html lang="ro">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>facturamea</title>
+    <script is:inline>
+      location.replace(localStorage.getItem('fm_token') ? '/app' : '/login');
+    </script>
+  </head>
+  <body></body>
+</html>

@@ -1,0 +1,7 @@
+---
+import AppLayout from '../../layouts/AppLayout.astro';
+import ClientsList from '../../components/ClientsList';
+---
+<AppLayout title="Clienți">
+  <ClientsList client:only="react" />
+</AppLayout>

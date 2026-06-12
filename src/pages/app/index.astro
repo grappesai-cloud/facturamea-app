@@ -1,0 +1,7 @@
+---
+import AppLayout from '../../layouts/AppLayout.astro';
+import Dashboard from '../../components/Dashboard';
+---
+<AppLayout title="Acasă">
+  <Dashboard client:only="react" />
+</AppLayout>

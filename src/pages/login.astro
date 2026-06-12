@@ -1,0 +1,27 @@
+---
+import '../styles/global.css';
+import LoginForm from '../components/LoginForm';
+---
+<!doctype html>
+<html lang="ro">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Autentificare | facturamea</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <div class="min-h-screen flex items-center justify-center px-4">
+      <div class="w-full max-w-[380px]">
+        <a href="/" class="flex items-center gap-2 mb-7">
+          <span class="w-9 h-9 rounded-xl bg-[#FF5C00] flex items-center justify-center text-white font-bold text-[16px]">f</span>
+          <span class="text-[20px] font-bold tracking-[-0.02em]">factura<span class="text-[#FF5C00]">mea</span></span>
+        </a>
+        <h1 class="text-[24px] font-bold tracking-[-0.02em] mb-1">Bine ai revenit</h1>
+        <p class="text-[14px] text-[#6B6B68] mb-6">Autentifică-te în contul facturamea.</p>
+        <LoginForm client:load />
+      </div>
+    </div>
+  </body>
+</html>

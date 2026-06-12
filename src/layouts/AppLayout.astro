@@ -1,0 +1,44 @@
+---
+import '../styles/global.css';
+interface Props { title: string; }
+const { title } = Astro.props;
+---
+<!doctype html>
+<html lang="ro">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>{title} | facturamea</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <!-- Auth guard: no token -> login -->
+    <script is:inline>
+      if (!localStorage.getItem('fm_token')) location.replace('/login');
+    </script>
+  </head>
+  <body>
+    <header class="bg-[#FAFAF8]/90 backdrop-blur border-b border-[#E5E4DD] sticky top-0 z-10">
+      <div class="max-w-[1100px] mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+        <a href="/app" class="flex items-center gap-2">
+          <span class="w-8 h-8 rounded-xl bg-[#FF5C00] flex items-center justify-center text-white font-bold">f</span>
+          <span class="text-[17px] font-bold tracking-[-0.02em]">factura<span class="text-[#FF5C00]">mea</span></span>
+        </a>
+        <nav class="flex items-center gap-1">
+          <a href="/app" class="px-3.5 h-10 inline-flex items-center rounded-xl text-[15px] font-medium hover:bg-[#F0F0EC]">Acasă</a>
+          <a href="/app/clienti" class="px-3.5 h-10 inline-flex items-center rounded-xl text-[15px] font-medium hover:bg-[#F0F0EC]">Clienți</a>
+          <button id="logout" class="px-3.5 h-10 inline-flex items-center rounded-xl text-[15px] font-medium text-[#B91C1C] hover:bg-[#FFF5F5]">Ieșire</button>
+        </nav>
+      </div>
+    </header>
+    <main class="max-w-[1100px] mx-auto px-4 sm:px-6 py-7">
+      <slot />
+    </main>
+    <script>
+      import { auth } from '../lib/api';
+      document.getElementById('logout')?.addEventListener('click', async () => {
+        await auth.logout();
+        location.href = '/login';
+      });
+    </script>
+  </body>
+</html>

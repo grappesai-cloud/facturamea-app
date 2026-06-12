@@ -1,0 +1,28 @@
+{
+  "name": "facturamea-app",
+  "type": "module",
+  "version": "0.1.0",
+  "engines": { "node": "22.x" },
+  "overrides": { "vite": "7.3.2" },
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "typecheck": "astro check"
+  },
+  "dependencies": {
+    "@astrojs/react": "5.0.3",
+    "@astrojs/vercel": "10.0.6",
+    "@tailwindcss/vite": "4.2.2",
+    "astro": "6.2.1",
+    "react": "19.2.5",
+    "react-dom": "19.2.5",
+    "tailwindcss": "4.2.2"
+  },
+  "devDependencies": {
+    "@astrojs/check": "0.9.9",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "typescript": "5.9.3"
+  }
+}
