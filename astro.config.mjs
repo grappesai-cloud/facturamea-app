@@ -11,7 +11,6 @@ export default defineConfig({
   output: 'static',
   integrations: [react()],
   vite: {
-    // @ts-expect-error @tailwindcss/vite plugin type vs Vite PluginOption
     plugins: [tailwindcss()],
   },
   adapter: vercel(),

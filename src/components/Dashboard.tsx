@@ -36,9 +36,12 @@ export default function Dashboard() {
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-[26px] font-bold tracking-[-0.02em]">Bună, {me?.user.name?.split(' ')[0] || ''} 👋</h1>
-        <p className="text-[15px] text-[#6B6B68] mt-1">{me?.company?.name || ''}</p>
+      <div className="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-[26px] font-bold tracking-[-0.02em]">Bună, {me?.user.name?.split(' ')[0] || ''} 👋</h1>
+          <p className="text-[15px] text-[#6B6B68] mt-1">{me?.company?.name || ''}</p>
+        </div>
+        <a href="/app/emite" className="shrink-0 px-5 py-2.5 bg-[#FF5C00] hover:bg-[#E04E00] text-white font-semibold rounded-xl text-[15px]">+ Emite factură</a>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-6">
@@ -63,12 +66,12 @@ export default function Dashboard() {
             {list.map((inv) => {
               const st = STATUS[inv.status] || STATUS.draft;
               return (
-                <div key={inv.id} className="flex items-center gap-4 px-5 py-3.5">
+                <a key={inv.id} href={`/app/factura?id=${inv.id}`} className="flex items-center gap-4 px-5 py-3.5 hover:bg-[#FAFAF8]">
                   <span className="font-mono font-semibold text-[15px] w-[120px]">{inv.fullNumber}</span>
                   <span className="flex-1 truncate text-[15px] text-[#3D3D3A]">{inv.clientNameSnap}</span>
                   <span className="font-bold tabular-nums text-[15px]">{ron(inv.totalCents)}</span>
                   <span className={`px-2.5 py-1 rounded-lg text-[13px] font-medium ${st.cls}`}>{st.label}</span>
-                </div>
+                </a>
               );
             })}
           </div>

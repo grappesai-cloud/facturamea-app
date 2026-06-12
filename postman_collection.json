@@ -1,0 +1,370 @@
+{
+  "info": {
+    "name": "facturamea API",
+    "description": "Token-Bearer API for facturamea. Run **Auth > Login** first: it captures the token into the `{{token}}` collection variable, which every other request sends as `Authorization: Bearer {{token}}`. All money is INTEGER cents. See openapi.yaml for the full schema.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "https://facturamea.vercel.app", "type": "string" },
+    { "key": "token", "value": "", "type": "string" },
+    { "key": "email", "value": "demo@facturamea.com", "type": "string" },
+    { "key": "password", "value": "Demo1234!", "type": "string" },
+    { "key": "invoiceId", "value": "", "type": "string" },
+    { "key": "clientId", "value": "", "type": "string" }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }]
+  },
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Capture the token into the {{token}} collection variable.",
+                  "pm.test('200 OK', function () { pm.response.to.have.status(200); });",
+                  "var data = pm.response.json();",
+                  "if (data && data.token) {",
+                  "  pm.collectionVariables.set('token', data.token);",
+                  "  console.log('Token saved to {{token}}');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/auth/token", "host": ["{{baseUrl}}"], "path": ["api", "auth", "token"] }
+          }
+        },
+        {
+          "name": "Me",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/api/auth/me", "host": ["{{baseUrl}}"], "path": ["api", "auth", "me"] }
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/api/auth/token", "host": ["{{baseUrl}}"], "path": ["api", "auth", "token"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Invoices",
+      "item": [
+        {
+          "name": "List invoices",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/invoicing/invoices?kind=factura",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "invoicing", "invoices"],
+              "query": [
+                { "key": "kind", "value": "factura" },
+                { "key": "status", "value": "", "disabled": true },
+                { "key": "q", "value": "", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create invoice",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var d = pm.response.json();",
+                  "if (d && d.id) pm.collectionVariables.set('invoiceId', d.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clientExternalId\": \"{{clientId}}\",\n  \"currency\": \"RON\",\n  \"sendEfactura\": false,\n  \"lines\": [\n    { \"description\": \"Servicii consultanță\", \"quantity\": 1, \"unitPriceCents\": 100000, \"vatRate\": 21 }\n  ]\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/invoicing/invoices", "host": ["{{baseUrl}}"], "path": ["api", "invoicing", "invoices"] }
+          }
+        },
+        {
+          "name": "Get invoice",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/api/invoicing/invoices/{{invoiceId}}", "host": ["{{baseUrl}}"], "path": ["api", "invoicing", "invoices", "{{invoiceId}}"] }
+          }
+        },
+        {
+          "name": "Send to e-Factura",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/api/invoicing/invoices/{{invoiceId}}/efactura", "host": ["{{baseUrl}}"], "path": ["api", "invoicing", "invoices", "{{invoiceId}}", "efactura"] }
+          }
+        },
+        {
+          "name": "Chitanță (record payment)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"amountCents\": 121000,\n  \"method\": \"transfer\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/invoicing/invoices/{{invoiceId}}/chitanta", "host": ["{{baseUrl}}"], "path": ["api", "invoicing", "invoices", "{{invoiceId}}", "chitanta"] }
+          }
+        },
+        {
+          "name": "Storno",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/api/invoicing/invoices/{{invoiceId}}/storno", "host": ["{{baseUrl}}"], "path": ["api", "invoicing", "invoices", "{{invoiceId}}", "storno"] }
+          }
+        },
+        {
+          "name": "Share link",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/api/invoicing/invoices/{{invoiceId}}/share", "host": ["{{baseUrl}}"], "path": ["api", "invoicing", "invoices", "{{invoiceId}}", "share"] }
+          }
+        },
+        {
+          "name": "PDF",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/api/invoicing/invoices/{{invoiceId}}/pdf", "host": ["{{baseUrl}}"], "path": ["api", "invoicing", "invoices", "{{invoiceId}}", "pdf"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Clients",
+      "item": [
+        {
+          "name": "List clients",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/api/invoicing/clients", "host": ["{{baseUrl}}"], "path": ["api", "invoicing", "clients"] }
+          }
+        },
+        {
+          "name": "Create client",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var d = pm.response.json();",
+                  "if (d && d.id) pm.collectionVariables.set('clientId', d.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Client Demo SRL\",\n  \"taxId\": \"RO12345678\",\n  \"isVatPayer\": true\n}" },
+            "url": { "raw": "{{baseUrl}}/api/invoicing/clients", "host": ["{{baseUrl}}"], "path": ["api", "invoicing", "clients"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Products",
+      "item": [
+        {
+          "name": "List products",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/api/invoicing/products", "host": ["{{baseUrl}}"], "path": ["api", "invoicing", "products"] }
+          }
+        },
+        {
+          "name": "Create product",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Consultanță (oră)\",\n  \"defaultUnitPriceCents\": 25000,\n  \"defaultVatRate\": 21,\n  \"defaultUm\": \"ora\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/invoicing/products", "host": ["{{baseUrl}}"], "path": ["api", "invoicing", "products"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Expenses",
+      "item": [
+        {
+          "name": "List expenses",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/api/cheltuieli/expenses", "host": ["{{baseUrl}}"], "path": ["api", "cheltuieli", "expenses"] }
+          }
+        },
+        {
+          "name": "Create expense",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"supplierNameSnap\": \"Furnizor SRL\",\n  \"documentType\": \"factura\",\n  \"documentNumber\": \"F-001\",\n  \"netCents\": 50000,\n  \"vatCents\": 10500,\n  \"deductible\": true\n}" },
+            "url": { "raw": "{{baseUrl}}/api/cheltuieli/expenses", "host": ["{{baseUrl}}"], "path": ["api", "cheltuieli", "expenses"] }
+          }
+        },
+        {
+          "name": "List suppliers",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/api/cheltuieli/suppliers", "host": ["{{baseUrl}}"], "path": ["api", "cheltuieli", "suppliers"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Gestiune",
+      "item": [
+        {
+          "name": "List warehouses",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/api/gestiune/warehouses", "host": ["{{baseUrl}}"], "path": ["api", "gestiune", "warehouses"] }
+          }
+        },
+        {
+          "name": "Stock levels",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/api/gestiune/stock", "host": ["{{baseUrl}}"], "path": ["api", "gestiune", "stock"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Contabilitate",
+      "item": [
+        {
+          "name": "Journal entries",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/api/contabilitate/entries", "host": ["{{baseUrl}}"], "path": ["api", "contabilitate", "entries"] }
+          }
+        },
+        {
+          "name": "Trial balance",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/api/contabilitate/balance", "host": ["{{baseUrl}}"], "path": ["api", "contabilitate", "balance"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ANAF",
+      "item": [
+        {
+          "name": "CUI lookup (public)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/anaf/lookup?cui=12345678",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "anaf", "lookup"],
+              "query": [{ "key": "cui", "value": "12345678" }]
+            }
+          }
+        },
+        {
+          "name": "e-Factura inbox",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/api/anaf/inbox", "host": ["{{baseUrl}}"], "path": ["api", "anaf", "inbox"] }
+          }
+        },
+        {
+          "name": "e-Factura inbox sync",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/api/anaf/inbox/sync", "host": ["{{baseUrl}}"], "path": ["api", "anaf", "inbox", "sync"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Banca",
+      "item": [
+        {
+          "name": "List accounts",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/api/banca/accounts", "host": ["{{baseUrl}}"], "path": ["api", "banca", "accounts"] }
+          }
+        },
+        {
+          "name": "List transactions",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/banca/transactions?reconciled=false",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "banca", "transactions"],
+              "query": [{ "key": "reconciled", "value": "false" }]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

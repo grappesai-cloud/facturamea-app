@@ -1,0 +1,1000 @@
+openapi: 3.1.0
+info:
+  title: facturamea API
+  version: "1.0"
+  description: |
+    Token-Bearer API for the facturamea invoicing/accounting platform.
+
+    Auth: POST /api/auth/token with {email,password} returns a `token`. Send it
+    as `Authorization: Bearer <token>` on every subsequent request. The token is
+    a session id; it is also accepted for OAuth handoff (Google/Apple).
+
+    All money is INTEGER cents (e.g. 508200 = 5.082,00 RON). Dates are ISO-8601.
+
+    This spec covers auth + the common CRUD across the main modules. The full
+    endpoint surface lives in the backend repo (facturamea) under
+    src/pages/api/** — additional modules: gestiune, comenzi, pos, banca,
+    mijloace-fixe, settings, reports (D406/D394/D300/D390, aging, export).
+servers:
+  - url: https://facturamea.vercel.app
+    description: Production
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Auth
+  - name: Invoices
+  - name: Clients
+  - name: Products
+  - name: Expenses
+  - name: Suppliers
+  - name: Gestiune
+  - name: Contabilitate
+  - name: ANAF
+  - name: Banca
+
+paths:
+  /api/auth/token:
+    post:
+      tags: [Auth]
+      summary: Log in and obtain a Bearer token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        "200":
+          description: Authenticated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  user: { $ref: "#/components/schemas/User" }
+                  company:
+                    oneOf:
+                      - $ref: "#/components/schemas/Company"
+                      - type: "null"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    delete:
+      tags: [Auth]
+      summary: Revoke the current token (logout)
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/auth/me:
+    get:
+      tags: [Auth]
+      summary: Current user, company and license
+      responses:
+        "200":
+          description: Session bootstrap
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user: { $ref: "#/components/schemas/User" }
+                  company:
+                    oneOf:
+                      - $ref: "#/components/schemas/Company"
+                      - type: "null"
+                  license:
+                    type: object
+                    nullable: true
+                    properties:
+                      plan: { type: string, enum: [trial, lifetime] }
+                      status: { type: string }
+                      active: { type: boolean }
+                      trialDaysLeft: { type: integer }
+                  anafConnected: { type: boolean }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/auth/google:
+    get:
+      tags: [Auth]
+      summary: Start Google OAuth (full-page redirect)
+      security: []
+      description: |
+        302-redirects to Google. Pass `redirect` = your frontend callback
+        (e.g. https://app.example.com/auth/callback). After auth the backend
+        redirects to `<redirect>#token=<token>`.
+      parameters:
+        - name: redirect
+          in: query
+          schema: { type: string, format: uri }
+      responses:
+        "302": { description: Redirect to Google }
+
+  /api/auth/apple:
+    get:
+      tags: [Auth]
+      summary: Start Apple OAuth (full-page redirect)
+      security: []
+      parameters:
+        - name: redirect
+          in: query
+          schema: { type: string, format: uri }
+      responses:
+        "302": { description: Redirect to Apple }
+
+  /api/anaf/lookup:
+    get:
+      tags: [ANAF]
+      summary: Public CUI lookup (ANAF v9 webservice)
+      security: []
+      parameters:
+        - name: cui
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Company data from ANAF
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400": { description: Invalid CUI }
+        "429": { description: Rate limited }
+
+  /api/invoicing/invoices:
+    get:
+      tags: [Invoices]
+      summary: List invoices
+      parameters:
+        - { name: kind, in: query, schema: { type: string, enum: [factura, proforma, storno, chitanta] } }
+        - { name: status, in: query, schema: { type: string } }
+        - { name: q, in: query, schema: { type: string } }
+        - { name: from, in: query, schema: { type: string, format: date } }
+      responses:
+        "200":
+          description: Invoice list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items: { $ref: "#/components/schemas/Invoice" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [Invoices]
+      summary: Create (and optionally issue) an invoice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/InvoiceCreate" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  fullNumber: { type: string }
+                  totalCents: { type: integer }
+                  efactura:
+                    type: object
+                    nullable: true
+                    properties:
+                      sent: { type: boolean }
+                      ok: { type: boolean }
+                      error: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/invoicing/invoices/{id}:
+    get:
+      tags: [Invoices]
+      summary: Get one invoice with its lines
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200":
+          description: Invoice + lines
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  invoice: { $ref: "#/components/schemas/Invoice" }
+                  lines:
+                    type: array
+                    items: { $ref: "#/components/schemas/InvoiceLine" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/invoicing/invoices/{id}/efactura:
+    post:
+      tags: [Invoices]
+      summary: Submit the invoice to ANAF SPV (e-Factura)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/invoicing/invoices/{id}/efactura-status:
+    post:
+      tags: [Invoices]
+      summary: Re-check the SPV processing status
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200":
+          description: Status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  status: { type: string, nullable: true }
+                  processing: { type: boolean }
+                  error: { type: string }
+
+  /api/invoicing/invoices/{id}/chitanta:
+    post:
+      tags: [Invoices]
+      summary: Record a payment and emit a chitanță (receipt)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amountCents]
+              properties:
+                amountCents: { type: integer }
+                method: { type: string, enum: [cash, card, transfer] }
+                reference: { type: string }
+      responses:
+        "201":
+          description: Receipt created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  fullNumber: { type: string }
+
+  /api/invoicing/invoices/{id}/storno:
+    post:
+      tags: [Invoices]
+      summary: Create a storno (cancellation) invoice
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "201":
+          description: Storno created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  fullNumber: { type: string }
+
+  /api/invoicing/invoices/{id}/share:
+    post:
+      tags: [Invoices]
+      summary: Create (or return) a public read-only link
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200":
+          description: Share link
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  url: { type: string, format: uri }
+    delete:
+      tags: [Invoices]
+      summary: Revoke the public link
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/invoicing/invoices/{id}/pdf:
+    get:
+      tags: [Invoices]
+      summary: Server-rendered invoice PDF
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200":
+          description: PDF
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+
+  /api/invoicing/clients:
+    get:
+      tags: [Clients]
+      summary: List clients
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Client list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items: { $ref: "#/components/schemas/Client" }
+    post:
+      tags: [Clients]
+      summary: Create a client
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Client" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+    patch:
+      tags: [Clients]
+      summary: Update a client (id in body)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - type: object
+                  required: [id]
+                  properties: { id: { type: string } }
+                - $ref: "#/components/schemas/Client"
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+    delete:
+      tags: [Clients]
+      summary: Delete a client (id in query)
+      parameters: [{ name: id, in: query, required: true, schema: { type: string } }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/invoicing/products:
+    get:
+      tags: [Products]
+      summary: List products
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+        - { name: active, in: query, schema: { type: string, enum: ["0", "1"] } }
+      responses:
+        "200":
+          description: Product list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items: { $ref: "#/components/schemas/Product" }
+    post:
+      tags: [Products]
+      summary: Create a product
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Product" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+    patch:
+      tags: [Products]
+      summary: Update a product (id in body)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - type: object
+                  required: [id]
+                  properties: { id: { type: string } }
+                - $ref: "#/components/schemas/Product"
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+    delete:
+      tags: [Products]
+      summary: Deactivate a product (id in query)
+      parameters: [{ name: id, in: query, required: true, schema: { type: string } }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/cheltuieli/expenses:
+    get:
+      tags: [Expenses]
+      summary: List expenses
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [unpaid, partial, paid] } }
+        - { name: category, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Expense list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items: { $ref: "#/components/schemas/Expense" }
+    post:
+      tags: [Expenses]
+      summary: Create an expense
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Expense" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+
+  /api/cheltuieli/expenses/{id}:
+    patch:
+      tags: [Expenses]
+      summary: Update an expense (status / paidCents / fields)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                paidCents: { type: integer }
+                markPaid: { type: boolean }
+                status: { type: string, enum: [unpaid, partial, paid] }
+                category: { type: string }
+                notes: { type: string }
+                deductible: { type: boolean }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+    delete:
+      tags: [Expenses]
+      summary: Delete an expense
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/cheltuieli/suppliers:
+    get:
+      tags: [Suppliers]
+      summary: List suppliers
+      parameters: [{ name: q, in: query, schema: { type: string } }]
+      responses:
+        "200":
+          description: Supplier list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items: { $ref: "#/components/schemas/Supplier" }
+    post:
+      tags: [Suppliers]
+      summary: Create a supplier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Supplier" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+
+  /api/cheltuieli/ocr:
+    post:
+      tags: [Expenses]
+      summary: Extract fields from a receipt/invoice image or PDF (OCR)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        "200":
+          description: Extracted fields
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  fields: { type: object, additionalProperties: true }
+                  error: { type: string }
+
+  /api/gestiune/warehouses:
+    get:
+      tags: [Gestiune]
+      summary: List warehouses
+      responses:
+        "200":
+          description: Warehouse list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items: { $ref: "#/components/schemas/Warehouse" }
+    post:
+      tags: [Gestiune]
+      summary: Create a warehouse
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Warehouse" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+
+  /api/gestiune/stock:
+    get:
+      tags: [Gestiune]
+      summary: Current stock levels
+      parameters: [{ name: warehouseId, in: query, schema: { type: string } }]
+      responses:
+        "200":
+          description: Stock levels
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items: { $ref: "#/components/schemas/StockLevel" }
+
+  /api/contabilitate/entries:
+    get:
+      tags: [Contabilitate]
+      summary: List journal entries (note contabile)
+      parameters:
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+      responses:
+        "200":
+          description: Journal entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items: { $ref: "#/components/schemas/JournalEntry" }
+    post:
+      tags: [Contabilitate]
+      summary: Add a manual journal entry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [lines]
+              properties:
+                entryDate: { type: string, format: date }
+                description: { type: string }
+                lines:
+                  type: array
+                  minItems: 2
+                  items:
+                    type: object
+                    required: [accountCode]
+                    properties:
+                      accountCode: { type: string }
+                      debitCents: { type: integer }
+                      creditCents: { type: integer }
+                      note: { type: string }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  entryId: { type: string }
+                  entryNumber: { type: integer }
+
+  /api/contabilitate/balance:
+    get:
+      tags: [Contabilitate]
+      summary: Trial balance (balanță de verificare)
+      parameters:
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+      responses:
+        "200":
+          description: Balance rows
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rows: { type: array, items: { type: object, additionalProperties: true } }
+                  from: { type: string }
+                  to: { type: string }
+
+  /api/anaf/inbox:
+    get:
+      tags: [ANAF]
+      summary: List received e-Factura messages
+      responses:
+        "200":
+          description: Inbox rows
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  rows: { type: array, items: { type: object, additionalProperties: true } }
+
+  /api/anaf/inbox/sync:
+    post:
+      tags: [ANAF]
+      summary: Pull received e-Factura messages from ANAF SPV
+      responses:
+        "200":
+          description: Sync result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  synced: { type: integer }
+                  total: { type: integer }
+                  error: { type: string }
+
+  /api/banca/accounts:
+    get:
+      tags: [Banca]
+      summary: List bank accounts
+      responses:
+        "200":
+          description: Accounts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accounts:
+                    type: array
+                    items: { $ref: "#/components/schemas/BankAccount" }
+    post:
+      tags: [Banca]
+      summary: Create a bank account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BankAccount" }
+      responses:
+        "201": { $ref: "#/components/responses/Created" }
+
+  /api/banca/transactions:
+    get:
+      tags: [Banca]
+      summary: List transactions for an account
+      parameters:
+        - { name: accountId, in: query, schema: { type: string } }
+        - { name: reconciled, in: query, schema: { type: boolean } }
+      responses:
+        "200":
+          description: Transactions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transactions:
+                    type: array
+                    items: { $ref: "#/components/schemas/BankTransaction" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: token
+
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+
+  responses:
+    Ok:
+      description: OK
+      content:
+        application/json:
+          schema:
+            type: object
+            properties: { ok: { type: boolean } }
+    Created:
+      description: Created
+      content:
+        application/json:
+          schema:
+            type: object
+            properties: { id: { type: string } }
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: Missing or invalid token
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+
+    User:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        email: { type: string }
+        platformId: { type: string }
+        isAdmin: { type: boolean }
+
+    Company:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        cui: { type: string, nullable: true }
+        role: { type: string }
+
+    Invoice:
+      type: object
+      properties:
+        id: { type: string }
+        fullNumber: { type: string }
+        kind: { type: string, enum: [factura, proforma, aviz, chitanta, storno] }
+        clientNameSnap: { type: string }
+        clientTaxIdSnap: { type: string, nullable: true }
+        clientAddressSnap: { type: string, nullable: true }
+        currency: { type: string }
+        subtotalCents: { type: integer }
+        vatCents: { type: integer }
+        totalCents: { type: integer }
+        paidCents: { type: integer }
+        status: { type: string, enum: [draft, issued, sent, partial, paid, overdue, voided, disputed] }
+        issuedAt: { type: string, format: date-time, nullable: true }
+        dueAt: { type: string, format: date-time, nullable: true }
+        efacturaStatus: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+
+    InvoiceLine:
+      type: object
+      properties:
+        id: { type: string }
+        position: { type: integer }
+        code: { type: string, nullable: true }
+        description: { type: string }
+        quantity: { type: number }
+        unit: { type: string }
+        unitPriceCents: { type: integer }
+        vatRate: { type: number }
+        lineTotalCents: { type: integer }
+
+    InvoiceCreate:
+      type: object
+      required: [lines]
+      properties:
+        clientExternalId: { type: string, description: "Id of a client from /api/invoicing/clients" }
+        clientCompanyId: { type: string }
+        clientName: { type: string }
+        clientTaxId: { type: string }
+        kind: { type: string, enum: [factura, proforma, storno, chitanta], default: factura }
+        currency: { type: string, default: RON }
+        dueAt: { type: string, format: date }
+        sendEfactura: { type: boolean, description: "Auto-submit to ANAF after issue" }
+        seriesId: { type: string }
+        modelId: { type: string }
+        vatRegime: { type: string }
+        vatAtCollection: { type: boolean }
+        language: { type: string, enum: [ro, en] }
+        precision: { type: integer, enum: [0, 2, 3, 4] }
+        issueImmediately: { type: boolean, default: true }
+        notes: { type: string }
+        lines:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [description, quantity, unitPriceCents, vatRate]
+            properties:
+              description: { type: string }
+              quantity: { type: number }
+              unitPriceCents: { type: integer }
+              vatRate: { type: number }
+              unit: { type: string }
+              code: { type: string }
+
+    Client:
+      type: object
+      required: [name]
+      properties:
+        id: { type: string, readOnly: true }
+        name: { type: string }
+        taxId: { type: string, nullable: true }
+        isVatPayer: { type: boolean }
+        registryNumber: { type: string, nullable: true }
+        country: { type: string }
+        county: { type: string, nullable: true }
+        city: { type: string, nullable: true }
+        address: { type: string, nullable: true }
+        postalCode: { type: string, nullable: true }
+        contactName: { type: string, nullable: true }
+        email: { type: string, nullable: true }
+        phone: { type: string, nullable: true }
+        iban: { type: string, nullable: true }
+        bank: { type: string, nullable: true }
+        notes: { type: string, nullable: true }
+
+    Product:
+      type: object
+      required: [name]
+      properties:
+        id: { type: string, readOnly: true }
+        code: { type: string, nullable: true }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        defaultUnitPriceCents: { type: integer, nullable: true }
+        defaultCurrency: { type: string }
+        defaultUm: { type: string }
+        defaultVatRate: { type: number }
+        productType: { type: string }
+        isActive: { type: boolean }
+
+    Expense:
+      type: object
+      properties:
+        id: { type: string, readOnly: true }
+        supplierId: { type: string, nullable: true }
+        supplierNameSnap: { type: string, nullable: true }
+        category: { type: string, nullable: true }
+        documentType: { type: string, enum: [factura, bon, chitanta, extras] }
+        documentNumber: { type: string, nullable: true }
+        issueDate: { type: string, format: date, nullable: true }
+        dueDate: { type: string, format: date, nullable: true }
+        currency: { type: string }
+        netCents: { type: integer }
+        vatCents: { type: integer }
+        totalCents: { type: integer }
+        paidCents: { type: integer }
+        status: { type: string, enum: [unpaid, partial, paid] }
+        deductible: { type: boolean }
+        notes: { type: string, nullable: true }
+
+    Supplier:
+      type: object
+      required: [name]
+      properties:
+        id: { type: string, readOnly: true }
+        name: { type: string }
+        cui: { type: string, nullable: true }
+        regCom: { type: string, nullable: true }
+        address: { type: string, nullable: true }
+        city: { type: string, nullable: true }
+        country: { type: string }
+        iban: { type: string, nullable: true }
+        email: { type: string, nullable: true }
+        phone: { type: string, nullable: true }
+        isActive: { type: boolean }
+
+    Warehouse:
+      type: object
+      required: [name]
+      properties:
+        id: { type: string, readOnly: true }
+        name: { type: string }
+        code: { type: string, nullable: true }
+        type: { type: string, enum: [depozit, magazin, custodie] }
+        address: { type: string, nullable: true }
+        managementType: { type: string, enum: [cantitativ_valoric, global_valoric] }
+        isDefault: { type: boolean }
+        isActive: { type: boolean }
+
+    StockLevel:
+      type: object
+      properties:
+        id: { type: string }
+        warehouseId: { type: string }
+        warehouseName: { type: string, nullable: true }
+        productId: { type: string }
+        productName: { type: string, nullable: true }
+        productCode: { type: string, nullable: true }
+        um: { type: string, nullable: true }
+        quantity: { type: number }
+        avgCostCents: { type: integer }
+        minQuantity: { type: number, nullable: true }
+
+    JournalEntry:
+      type: object
+      properties:
+        id: { type: string }
+        entryNumber: { type: integer }
+        entryDate: { type: string, format: date }
+        description: { type: string, nullable: true }
+        source: { type: string }
+        lines:
+          type: array
+          items:
+            type: object
+            properties:
+              accountCode: { type: string }
+              debitCents: { type: integer }
+              creditCents: { type: integer }
+              note: { type: string, nullable: true }
+
+    BankAccount:
+      type: object
+      required: [name]
+      properties:
+        id: { type: string, readOnly: true }
+        name: { type: string }
+        iban: { type: string, nullable: true }
+        bank: { type: string, nullable: true }
+        currency: { type: string }
+        balanceCents: { type: integer }
+        isActive: { type: boolean }
+        unreconciledCount: { type: integer, readOnly: true }
+
+    BankTransaction:
+      type: object
+      properties:
+        id: { type: string }
+        accountId: { type: string }
+        bookingDate: { type: string, format: date, nullable: true }
+        amountCents: { type: integer }
+        currency: { type: string }
+        description: { type: string, nullable: true }
+        counterparty: { type: string, nullable: true }
+        counterpartyIban: { type: string, nullable: true }
+        reference: { type: string, nullable: true }
+        reconciled: { type: boolean }
+        matchedType: { type: string, enum: [invoice, expense], nullable: true }
+        matchedId: { type: string, nullable: true }

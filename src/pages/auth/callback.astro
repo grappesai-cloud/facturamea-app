@@ -1,0 +1,35 @@
+---
+// OAuth handoff landing page.
+// The backend redirects here with the session token in the URL fragment:
+//   /auth/callback#token=XXXX
+// We read it, persist it to localStorage as `fm_token` (same key api.ts uses),
+// then go to /app. Missing token → /login?error=oauth.
+---
+<!doctype html>
+<html lang="ro">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Conectare… | facturamea</title>
+    <script is:inline>
+      (function () {
+        try {
+          var hash = (location.hash || '').replace(/^#/, '');
+          var params = new URLSearchParams(hash);
+          var token = params.get('token');
+          if (token) {
+            localStorage.setItem('fm_token', token);
+            location.replace('/app');
+          } else {
+            location.replace('/login?error=oauth');
+          }
+        } catch (e) {
+          location.replace('/login?error=oauth');
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <p style="font-family: Inter, system-ui, sans-serif; padding: 24px; color: #6B6B68;">Te conectăm…</p>
+  </body>
+</html>

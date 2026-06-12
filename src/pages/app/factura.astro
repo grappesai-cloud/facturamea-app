@@ -1,0 +1,8 @@
+---
+import AppLayout from '../../layouts/AppLayout.astro';
+import InvoiceDetail from '../../components/InvoiceDetail';
+---
+<!-- Detail page reads ?id= at runtime (static output, no dynamic route param). -->
+<AppLayout title="Factură">
+  <InvoiceDetail client:only="react" />
+</AppLayout>

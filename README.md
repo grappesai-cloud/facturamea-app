@@ -27,6 +27,22 @@ Token Bearer, fără cookie:
 
 Toată logica e în **`src/lib/api.ts`** (client tipat). Nu apela `fetch` direct, folosește clientul.
 
+### OAuth (Google / Apple)
+
+Login social prin redirect, nu prin popup. Butoanele din `LoginForm.tsx` sunt simple link-uri către backend:
+
+```
+${PUBLIC_API_URL}/api/auth/google?redirect=<FE>/auth/callback
+${PUBLIC_API_URL}/api/auth/apple?redirect=<FE>/auth/callback
+```
+
+Fluxul (handoff token, fără cookie):
+1. Utilizatorul apasă „Continuă cu Google/Apple" → navigare full-page la backend.
+2. Backendul autentifică la provider, apoi redirecționează la `<FE>/auth/callback#token=XXXX`.
+3. Pagina **`src/pages/auth/callback.astro`** citește token-ul din fragment (`location.hash`), îl salvează în `localStorage` ca `fm_token`, apoi merge la `/app`. Fără token → `/login?error=oauth` (mesaj afișat de `LoginForm`).
+
+Important: originea FE trebuie inclusă în `FRONTEND_ORIGINS` (sau în sufixul permis) pe backend, altfel handoff-ul de token e respins (`isAllowedFeRedirect`). Helper-ele `auth.googleUrl()` / `auth.appleUrl()` / `oauthUrl()` construiesc URL-urile corect.
+
 ## Clientul API (`src/lib/api.ts`)
 
 ```ts
@@ -50,23 +66,74 @@ const ps = await products.list();
 ron(508200); // "5.082,00 RON"
 ```
 
-Tipuri exportate: `Me`, `Invoice`, `Client`, `Product`. Erorile sunt `ApiError` cu `.status` + `.message`.
+Clientul acoperă acum **toate modulele backendului**, grupate pe domeniu:
 
-Sumele sunt mereu în **bani (integer cents)**. Folosește `ron()` pentru afișare.
+```ts
+import {
+  auth, invoices, clients, products,            // facturare de bază
+  tva, series, models, recurring,               // setări facturare
+  efacturaSettings, reports,                     // e-Factura + rapoarte/declarații
+  gestiune, cheltuieli, contabilitate, comenzi,  // stoc, cheltuieli, contabilitate, comenzi
+  anaf, banca, pos, mijloaceFixe, settings,      // ANAF, bancă, POS, mijloace fixe, setări
+  ron, money,                                    // formatare
+} from '../lib/api';
+
+// Exemple
+await invoices.create({ clientExternalId, dueAt, sendEfactura, lines: [{ description, quantity, unitPriceCents, vatRate }] });
+await invoices.efacturaStatus(id);
+await invoices.chitanta(id, { amountCents: 121000, method: 'transfer' });
+await invoices.storno(id);
+const { url } = await invoices.share(id);        // link public
+await invoices.pdfDownload(id, fullNumber);       // descarcă PDF (cu Bearer)
+
+const { results } = await gestiune.stock();
+await cheltuieli.ocr(file);                        // multipart, extrage câmpuri din bon/factură
+const { rows } = await contabilitate.balance({ from, to });
+await comenzi.sales.invoice(orderId);              // transformă comanda în factură
+const data = await anaf.lookup('RO12345678');      // CUI public
+await banca.transactions.import(accountId, file);  // import extras CSV/MT940
+await reports.download(reports.saftD406Url(from, to), 'D406.xml'); // declarații (fișier)
+```
+
+Helperi suplimentari: `apiUpload()` (multipart cu Bearer), `downloadFile()` (descărcare autentificată ca blob), `downloadUrl()` (construiește URL-ul), `oauthUrl()`.
+
+Tipuri exportate (proprii pentru entitățile importante): `Me`, `Invoice`, `InvoiceLine`, `InvoiceCreateInput`, `Client`, `Product`, `Expense`, `Supplier`, `Warehouse`, `StockLevel`, `JournalEntry`, `LedgerAccount`, `BankAccount`, `BankTransaction`, `FixedAsset`, `TvaRate`, `InvoiceSeries`, `Analytics`. Erorile sunt `ApiError` cu `.status` + `.message`.
+
+Sumele sunt mereu în **bani (integer cents)**. Folosește `ron()` (RON) sau `money(cents, currency)` pentru afișare.
 
 ## Structură
 
 ```
 src/
-  lib/api.ts            # client API + tipuri + auth (PUNCTUL DE INTEGRARE)
+  lib/api.ts               # client API + tipuri + auth (PUNCTUL DE INTEGRARE — acoperă toate modulele)
   layouts/AppLayout.astro  # shell cu guard de auth + nav + logout
-  components/           # React islands: LoginForm, Dashboard, ClientsList
+  components/              # React islands: LoginForm (+OAuth), Dashboard, ClientsList,
+                           #   InvoiceForm (emite factură), InvoiceDetail
   pages/
-    index.astro         # redirect /app sau /login
-    login.astro
-    app/index.astro     # dashboard (exemplu: listă facturi + KPI)
-    app/clienti.astro   # exemplu: listă + adăugare clienți
+    index.astro            # redirect /app sau /login
+    login.astro            # + butoane Google/Apple
+    auth/callback.astro    # handoff token OAuth (#token=... → localStorage → /app)
+    app/index.astro        # dashboard (listă facturi + KPI + CTA „Emite factură")
+    app/emite.astro        # ecran de emitere factură (exemplul de scriere)
+    app/factura.astro      # detaliu factură, citește ?id= (acțiuni: PDF, share, e-Factura, storno)
+    app/clienti.astro      # listă + adăugare clienți
+openapi.yaml               # contract OpenAPI 3.1 (auth + module principale)
+postman_collection.json    # colecție Postman v2.1 (login capturează {{token}})
 ```
+
+Notă (output static): pentru detaliu factură nu există rută dinamică `[id]`. Pagina `app/factura.astro` citește `?id=` la runtime în island-ul `InvoiceDetail` (`client:only`). Linkurile sunt `/app/factura?id=<id>`.
+
+## Ecrane noi (referință pentru designer)
+
+- **Emite factură** (`/app/emite`): selector de client (cu „client nou" inline), editor de linii dinamic (descriere, cantitate, preț, TVA% — preumplute din `products.list()`), subtotal/TVA/total live calculat în bani, monedă, scadență, checkbox „Trimite la e-Factura". La submit cheamă `invoices.create(...)` și afișează numărul generat + link „Vezi factura". Este **pattern-ul de scriere** de copiat pentru restul formularelor.
+- **Detaliu factură** (`/app/factura?id=`): header + linii + acțiuni (PDF, link public, trimite la e-Factura, storno).
+
+## Contractul API (pentru designer)
+
+Lista completă de endpoint-uri se descoperă fie citind repo-ul backend (`facturamea`, sub `src/pages/api/**`), fie din:
+
+- **`openapi.yaml`** (rădăcina repo) — OpenAPI 3.1: auth + CRUD pentru invoices, clients, products, expenses, suppliers, gestiune, contabilitate, ANAF, bancă. Schema Bearer + serverul `https://facturamea.vercel.app`. Deschide-l în Swagger Editor / Stoplight.
+- **`postman_collection.json`** (rădăcina repo) — colecție Postman v2.1 cu variabilele `{{baseUrl}}` și `{{token}}`. Rulează întâi **Auth > Login**: scriptul de test capturează automat token-ul în `{{token}}`, iar restul cererilor trimit `Authorization: Bearer {{token}}`.
 
 ## Cum adaugi un ecran nou
 

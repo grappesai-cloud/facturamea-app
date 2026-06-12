@@ -1,0 +1,7 @@
+---
+import AppLayout from '../../layouts/AppLayout.astro';
+import InvoiceForm from '../../components/InvoiceForm';
+---
+<AppLayout title="Emite factură">
+  <InvoiceForm client:only="react" />
+</AppLayout>
